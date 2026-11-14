@@ -1,6 +1,6 @@
 from remotezip import RemoteZip
 
-URL = "https://s3.eu-central-1.amazonaws.com/avg-kitti/data_odometry_velodyne.zip"
+URL = "PASTE-THE-VELODYNE-LINK-FROM-YOUR-KITTI-EMAIL-HERE"
 SEQ = "04"
 
 with RemoteZip(URL) as z:
