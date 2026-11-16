@@ -3,3 +3,5 @@ data/
 __pycache__/
 *.pyc
 kitti_url.txt
+results_backup/
+image.png
