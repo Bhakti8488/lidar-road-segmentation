@@ -1,10 +1,15 @@
+import sys
 import os, time
 import numpy as np
 import torch, torch.nn as nn
 import matplotlib.pyplot as plt
 import open3d as o3d
 
-torch.manual_seed(0); np.random.seed(0); o3d.utility.random.seed(0)
+SEED = int(sys.argv[1]) if len(sys.argv) > 1 else 0
+AUG = len(sys.argv) > 2 and sys.argv[2] == "aug"
+TAG = "aug_" if AUG else ""
+print("augmentation:", AUG)
+torch.manual_seed(SEED); np.random.seed(SEED); o3d.utility.random.seed(SEED)
 
 SEQ_DIR = "data/dataset/sequences/04"
 ROAD_IDS = [40, 44]
@@ -67,8 +72,11 @@ def sample_batch(ids, rng):
         pts, gt, _ = data[i]
         sel = rng.choice(len(pts), N_POINTS, replace=len(pts) < N_POINTS)
         p = pts[sel] / SCALE
+        if AUG:                                         # shift the whole scan randomly (up to 4 m)
+            p[:, 0] += rng.uniform(-4, 4) / SCALE[0]
+            p[:, 1] += rng.uniform(-4, 4) / SCALE[1]
         if rng.random() < 0.5:
-            p[:, 1] *= -1                                   # mirror left/right as a simple augmentation
+            p[:, 1] *= -1                               # mirror left/right as a simple augmentation
         X.append(p.T); Y.append(gt[sel])
     return (torch.tensor(np.stack(X), dtype=torch.float32),
             torch.tensor(np.stack(Y).astype(np.int64)))
@@ -76,7 +84,7 @@ def sample_batch(ids, rng):
 model = PointNetSeg()
 opt = torch.optim.Adam(model.parameters(), lr=1e-3)
 loss_fn = nn.CrossEntropyLoss()
-rng = np.random.default_rng(0)
+rng = np.random.default_rng(SEED)
 
 print("training...")
 t0 = time.time()
@@ -94,7 +102,7 @@ for epoch in range(EPOCHS):
     print(f"epoch {epoch + 1}/{EPOCHS}  loss {np.mean(losses):.4f}  ({time.time() - t0:.0f}s)")
 
 os.makedirs("results", exist_ok=True)
-torch.save(model.state_dict(), "results/pointnet.pt")
+torch.save(model.state_dict(), f"results/pointnet_{TAG}seed{SEED}.pt")
 
 # ---------- testing ----------
 @torch.no_grad()
@@ -127,7 +135,7 @@ for i in TEST_IDS:
         fa_p[int(k)] = fa_p.get(int(k), 0) + int(v)
 res_r, res_p = np.array(res_r), np.array(res_p)
 print(f"RANSAC   : mean IoU {res_r[:, 0].mean():.3f} | mean F1 {res_r[:, 1].mean():.3f}")
-print(f"PointNet : mean IoU {res_p[:, 0].mean():.3f} | mean F1 {res_p[:, 1].mean():.3f}")
+print(f"RESULT seed={SEED} ransac_iou={res_r[:, 0].mean():.4f} pointnet_iou={res_p[:, 0].mean():.4f} pointnet_f1={res_p[:, 1].mean():.4f}")
 tot = sum(fa_p.values())
 print("PointNet false alarms by true class:")
 for k, v in sorted(fa_p.items(), key=lambda kv: -kv[1])[:5]:
@@ -149,5 +157,5 @@ for ax, (title, pred) in zip(axes, [("ground truth", None), ("RANSAC", pr), ("Po
     ax.scatter(pts[:, 0], pts[:, 1], c=colors, s=0.4)
     ax.set_aspect("equal"); ax.set_title(f"{title} (scan {i})")
 plt.tight_layout()
-plt.savefig("results/compare_scan.png", dpi=200)
-plt.show()
+plt.savefig(f"results/compare_scan_{TAG}seed{SEED}.png", dpi=200)
+plt.close()
